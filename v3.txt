@@ -1,0 +1,98 @@
+flowchart TD
+    subgraph Ingestion_Pipeline [Inbound Data Source Platform]
+        direction TB
+        cbs[("<b>CBS Server</b><br>• Core Banking System<br>• Origin of transaction files")]
+        
+        cbs -->|File Transfer<br>SFTP / Connect:Direct| files
+
+        subgraph SS [Staging Server]
+            direction TB
+            files[Source Files] -->|Local File IO| nifi[Apache NiFi]
+        end
+    end
+
+    nifi -->|Ingest via HDFS Client| raw
+    
+    subgraph HDFS [HDFS Storage Layer]
+        direction LR
+        subgraph raw [Raw Zone]
+            bancs[Bancs Files .gz]
+            glif[GLIF Files .gz]
+        end
+        
+        subgraph dl [Delta Lake Layer]
+            direction TB
+            desc["<b>Delta Lake (ACID Layer)</b><br>• Stores data in highly optimized <b>Parquet format</b><br>• Appends a transaction log for reliable, versioned reads"]
+        end
+
+        rep>📄 Reports]
+        
+        druid_seg[("<b>Druid Segments</b><br>• Druid Deep Storage Location<br>• Durable, partitioned data blocks")]
+    end
+
+    druid[("<b>Apache Druid Cluster</b><br>• Real-time analytics database engine<br>• Independent compute nodes")]
+    oracle[("<b>Oracle DB</b><br>• Enterprise relational RDBMS<br>• Secure transactional storage")]
+
+    %% ========================================== %%
+    %% 1. CORE ETL PIPELINES & DEEP STORAGE LINKS %%
+    %% ========================================== %%
+    raw --->|Read Raw Zone| etl_hdfs
+    etl_hdfs --->|Write ACID Layer| desc
+    desc --->|Generate| rep
+    desc --->|Sync Transactional| oracle
+    desc --->|Sync Analytics| druid
+    druid --->|Write Deep Storage Archive| druid_seg
+    druid_seg --->|Pull Segments to Local Cache| druid
+
+    %% ========================================== %%
+    %% 2. APPLICATION CONSUMPTION PATHS (Non-ETL) %%
+    %% ========================================== %%
+    ms --->|Fetch Reports| rep
+    ms --->|Fetch Analytics| druid
+    ms --->|Query Data| oracle
+    
+    subgraph K8s [Kubernetes Cluster Platform]
+        direction TB
+        
+        subgraph ETL [Kubernetes ETL Compute]
+            direction LR
+            etl_hdfs[ETL Processing Pods]
+        end
+        
+        subgraph AppLayer [Application Runtime Zone]
+            direction LR
+            ms[FinCore Microservices] -->|Serve Reports & Data| fe[FinCore Frontend<br>React App]
+        end
+    end
+
+    %% Bright Pastel & High-Visibility Styling %%
+    style Ingestion_Pipeline fill:#FFFDF5,stroke:#D6336C,stroke-width:1.5px,stroke-dasharray: 5 5
+    style cbs fill:#FFF0F6,stroke:#D6336C,stroke-width:2px,color:#000
+    style SS fill:#FFFCEB,stroke:#FFD43B,stroke-width:2px,color:#000
+    style nifi fill:#FFFFFF,stroke:#FAB005,stroke-width:1.5px,color:#000
+    style files fill:#FFFFFF,stroke:#ADB5BD,stroke-width:1px,color:#000
+    style HDFS fill:#F4FCE3,stroke:#74B816,stroke-width:2px,color:#000
+    style raw fill:#FFFFFF,stroke:#66A80F,stroke-width:1.5px,color:#000
+    style bancs fill:#FFFFFF,stroke:#94D82D,stroke-width:1px,color:#000
+    style glif fill:#FFFFFF,stroke:#94D82D,stroke-width:1px,color:#000
+    style dl fill:#E7F5FF,stroke:#228BE6,stroke-width:2px,color:#000
+    style desc fill:#FFFFFF,stroke:#339AF0,stroke-width:1px,color:#000
+    style rep fill:#FFFFFF,stroke:#74B816,stroke-width:2px,color:#000
+    style druid_seg fill:#FFFFFF,stroke:#74B816,stroke-width:2px,color:#000
+    style druid fill:#F8F0FC,stroke:#9C36B5,stroke-width:2px,color:#000
+    style oracle fill:#FFF4E6,stroke:#FF922B,stroke-width:2px,color:#000
+    style K8s fill:#E3FAFC,stroke:#1098AD,stroke-width:2px,color:#000
+    style ETL fill:#FFFFFF,stroke:#3BC9DB,stroke-width:1.5px,color:#000
+    style AppLayer fill:#FFFFFF,stroke:#3BC9DB,stroke-width:1.5px,color:#000
+    style etl_hdfs fill:#FFF0F6,stroke:#D6336C,stroke-width:1.5px,color:#000
+    style ms fill:#FFFFFF,stroke:#3BC9DB,stroke-width:2px,color:#000
+    style fe fill:#EBFBEE,stroke:#40C057,stroke-width:2px,color:#000
+
+    %% LINK STYLING: Tracks sequential indices strictly for ETL paths %%
+    linkStyle 4 stroke:#E64980,stroke-width:2.5px; %% raw ---> etl_hdfs
+    linkStyle 5 stroke:#E64980,stroke-width:2.5px; %% etl_hdfs ---> desc
+    linkStyle 6 stroke:#E64980,stroke-width:2.5px; %% desc ---> rep (Generate Reports)
+    linkStyle 7 stroke:#E64980,stroke-width:2.5px; %% desc ---> oracle
+    linkStyle 8 stroke:#E64980,stroke-width:2.5px; %% desc ---> druid
+    linkStyle 9 stroke:#E64980,stroke-width:2.5px; %% druid ---> druid_seg
+    linkStyle 10 stroke:#E64980,stroke-width:2.5px; %% druid_seg ---> druid
