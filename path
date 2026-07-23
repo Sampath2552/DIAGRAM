@@ -1,0 +1,48 @@
+Date: 30-03-2026
+Sample Branch Code: 00001
+
+NWSA
+
+	Standard : 
+		Whole Bank: /reports/2026-03-30/nwsa_report/nwsa_report_30032026.pdf
+		Branch : /reports/2026-03-30/nwsa_report/00001/nwsa_report_30032026_00001.pdf
+	ASCII:
+		Whole Bank: /reports/2026-03-30/ascii_files/nwsa_report/00000.INR.20260330.*
+		Branch : /reports/2026-03-30/ascii_files/nwsa_report/00001.INR.20260330.*
+
+	TB ASCII: 
+		Whole Bank: /reports/2026-03-30/tb_ascii_files/nwsa_report/00000.TBNWSA.20260330
+		Branch: /reports/2026-03-30/tb_ascii_files/nwsa_report/00001.TBNWSA.20260330
+	TB ASCII Report Files:
+		Whole Bank: /reports/2026-03-30/tb_ascii_report_files/nwsa_report/00000.TBNWSA.20260330*
+		Branch: /reports/2026-03-30/tb_ascii_report_files/nwsa_report/00001.TBNWSA.20260330*
+
+YSA 
+	Standard : 
+		Whole Bank: /reports/2026-03-30/ysa_report/ysa_report_30032026.pdf
+		Branch : /reports/2026-03-30/ysa_report/00001/ysa_report_30032026_00001.pdf
+	ASCII:
+		Whole Bank: /reports/2026-03-30/ascii_files/ysa_report/00000.YSA.20260330
+		Branch : /reports/2026-03-30/ascii_files/ysa_report/00001.YSA.20260330
+
+	TB ASCII: 
+		Whole Bank: /reports/2026-03-30/tb_ascii_files/ysa_report/00000.TBY.20260330
+		Branch: /reports/2026-03-30/tb_ascii_files/ysa_report/00001.TBY.20260330
+	TB ASCII Report Files:
+		Whole Bank: /reports/2026-03-30/tb_ascii_report_files/ysa_report/00000.TBY.20260330.*
+		Branch: /reports/2026-03-30/tb_ascii_report_files/ysa_report/00001.TBY.20260330.*
+
+PNL
+	Standard : 
+		Whole Bank: /reports/2026-03-30/pnl_report/pnl_report_30032026.pdf
+		Branch : /reports/2026-03-30/pnl_report/00001/pnl_report_30032026_00001.pdf
+	ASCII:
+		Whole Bank: /reports/2026-03-30/ascii_files/pnl_report/00000.PL.20260330
+		Branch : /reports/2026-03-30/ascii_files/pnl_report/00001.PL.20260330
+
+	TB ASCII: 
+		Whole Bank: /reports/2026-03-30/tb_ascii_files/pnl_report/00000.TBP.20260330
+		Branch: /reports/2026-03-30/tb_ascii_files/pnl_report/00001.TBP.20260330
+	TB ASCII Report Files:
+		Whole Bank: /reports/2026-03-30/tb_ascii_report_files/pnl_report/00000.TBP.20260330.*
+		Branch: /reports/2026-03-30/tb_ascii_report_files/pnl_report/00001.TBP.20260330.*
