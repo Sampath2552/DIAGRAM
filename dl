@@ -1,0 +1,118 @@
+@Transactional
+@Override
+    public ReportStreamResponse downloadReportStream(String fileName, LocalDate date, int userRoleId, String userId,
+                                                     String branchCode) throws IOException {
+        // 1. Authorization Check
+        ReportType reportType = reportTypeRepository.findByFileNameAndRoles_roleId(fileName, userRoleId)
+                .orElseThrow(() -> {
+                    log.warn("Access Denied: User {} -> Report {}", userId, fileName);
+                    sendNotification(userId, "Access Denied for report: " + fileName, "/glif-reports",
+                            fileName + "_" + date);
+                    return new AccessDeniedException("Access Denied for report: " + fileName);
+                });
+        log.info("Fetched report from db : {}", reportType.getReportName());
+        // This is the human-readable name (e.g., "Daily Balance Sheet")
+        String reportDisplayName = reportType.getReportName();
+        // Construct task id
+        String safeReportName = reportDisplayName.replaceAll("[^a-zA-Z0-9]", "_").toLowerCase().replaceAll("_", "_");
+        String safeDate = date.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String taskId = String.format("%s_%s_%d", safeReportName, safeDate, System.currentTimeMillis());
+        // 2. Prepare Paths with the CORRECT format "dd-MM-yyyy"
+        String formattedDate = date.format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String fileNamePrefix = fileName + "_" + date.format(DateTimeFormatter.ofPattern("ddMMyyyy"));
+        log.info("branch code :  {}", branchCode);
+        Path searchDirectory;
+        if (branchCode == null || branchCode.isBlank()) {
+            // For Whole Bank Reports
+            searchDirectory = new Path(new Path(reportsBasePath, formattedDate), fileName);
+            log.info("Searching HDFS directory {} for whole bank reports with prefix '{}'...", searchDirectory,fileNamePrefix);
+        } else {
+            // For Branch-Wise Reports, directory example: /branch_reports/00001/2026-01-07/
+            Path reportFolder = new Path(new Path(reportsBasePath, formattedDate), fileName);
+            searchDirectory = new Path(reportFolder, branchCode);
+            log.info("Searching HDFS directory {} for branch wise reports with prefix '{}'...", searchDirectory,fileNamePrefix);
+        }
+        // 3. Call the common stream Logic and return directly to the client
+        return streamReport(searchDirectory, taskId, userId, fileNamePrefix, reportDisplayName, date, fileName,formattedDate);
+    }
+    private ReportStreamResponse streamReport(Path searchDirectory, String taskId, String userId, String fileNamePrefix,
+                                              String reportDisplayName, LocalDate date, String fileName, String formattedDate) {
+        StreamingResponseBody streamingBody = outputStream -> {
+            try (ZipOutputStream zipOut = new ZipOutputStream(outputStream)) {
+                if (!hdfsFileSystem.exists(searchDirectory)) {
+                    log.info("Directory not found in HDFS: {}", searchDirectory);
+                    // Throw immediately so a proper HTTP 404 is sent to the client
+                    throw new ResourceNotFoundException("Reports directory not found: " + searchDirectory);
+                }
+                // 1. Calculate Total Size of all files to be downloaded
+                long calculatedTotalSize = 0;
+                for (FileStatus status : hdfsFileSystem.listStatus(searchDirectory)) {
+                    if (status.isFile() && status.getPath().getName().startsWith(fileNamePrefix)) {
+                        calculatedTotalSize += status.getLen();
+                    }
+                }
+                final long finalTotalSize = calculatedTotalSize; // Needed for lambda
+                // Atomic counter to track bytes read across multiple files (if multiple exist)
+                AtomicLong globalBytesRead = new AtomicLong(0);
+                FileStatus[] fileStatuses = hdfsFileSystem.listStatus(searchDirectory);
+                boolean fileFound = false;
+                for (FileStatus status : fileStatuses) {
+                    if (!status.isFile())
+                        continue;
+                    String actualFileName = status.getPath().getName();
+                    if (actualFileName.startsWith(fileNamePrefix)) {
+                        fileFound = true;
+                        sendProgress(taskId, userId, 0, "Starting download...", "PROCESSING");
+                        ZipEntry zipEntry = new ZipEntry(actualFileName);
+                        zipOut.putNextEntry(zipEntry);
+                        try (FSDataInputStream hdfsStream = hdfsFileSystem.open(status.getPath())) {
+                            // --- REPLACED StreamUtils.copy WITH MANUAL LOOP ---
+                            byte[] buffer = new byte[32 * 1024]; // 32KB buffer
+                            int bytesRead;
+                            int lastPercent = 0;
+                            while ((bytesRead = hdfsStream.read(buffer)) != -1) {
+                                zipOut.write(buffer, 0, bytesRead);
+                                // Update global counter
+                                long currentTotal = globalBytesRead.addAndGet(bytesRead);
+                                // Calculate Percentage
+                                int percent = (int) ((currentTotal * 100) / finalTotalSize);
+                                // Cap at 99% so 100% is only sent when fully done
+                                if (percent > 99)
+                                    percent = 99;
+                                // Throttle: Send update only if percent changed by 5%
+                                if (percent >= lastPercent + 5) {
+                                    sendProgress(taskId, userId, percent, "Downloading... " + percent + "%",
+                                            "PROCESSING");
+                                    lastPercent = percent;
+                                }
+                            }
+                        } finally {
+                            zipOut.closeEntry();
+                        }
+                        log.info("Streamed file {} into zip response.", actualFileName);
+                    }
+                }
+                if (!fileFound) {
+                    log.info("No report files found matching prefix: " + fileNamePrefix);
+                    // Throw immediately so a proper HTTP 404 is sent to the client
+                    throw new ResourceNotFoundException("No report files found matching prefix: " + fileNamePrefix);
+                }
+                // Notification is only sent AFTER all files are confirmed found and streamed
+                String successMsg = String.format("%s downloaded successfully.", reportDisplayName);
+                sendProgress(taskId, userId, 100, "Download Complete", "COMPLETED");
+                sendNotification(userId, successMsg, "/glif-reports", fileName + "_" + date);
+            } catch (ResourceNotFoundException e) {
+                // If a resource error happens before streaming starts, it's caught here
+                log.error("Resource not found error: {}", e.getMessage());
+                sendNotification(userId, reportDisplayName + " is not available.", "/glif-reports",
+                        fileName + "_" + date);
+            } catch (IOException e) {
+                log.error("Streaming I/O error for user {}: {}", userId, e.getMessage(), e);
+                sendNotification(userId,
+                        "Download failed due to a streaming or internet issue. Please check your connection and try again.",
+                        "/glif-reports", fileName + "_" + date);
+            }
+        };
+        String downloadName = fileName + "_" + formattedDate + ".zip";
+        return new ReportStreamResponse(downloadName, streamingBody);
+    }
