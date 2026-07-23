@@ -1,0 +1,165 @@
+package com.fincore.ReportService.service;
+
+import com.fincore.ReportService.dto.ReportPath;
+import com.fincore.ReportService.exception.ResourceNotFoundException;
+import com.fincore.ReportService.model.ReportType;
+import com.fincore.ReportService.repository.ReportTypeRepository;
+import com.fincore.ReportService.util.Constants;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import org.apache.hadoop.fs.Path;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Map;
+
+@Slf4j
+@Service
+public class ReportPathBuilderService {
+
+    @Autowired
+    private final ReportTypeRepository reportTypeRepository;
+
+    private final String reportsBasePath="/reports";
+    private static final String NWSA_REPORT="nwsa_report";
+    private static final String YSA_REPORT="ysa_report";
+    private static final String PNL_REPORT="pnl_report";
+    private final String NWSA="nwsa";
+    private final String YSA="ysa";
+    private final String PNL="pnl";
+    private final String WHOLE_BANK_BRANCH_CODE = "00000";
+    private static final Map<String,String> ASCII_SUFFIX_MAP = Map.of(
+            NWSA_REPORT,"*",
+            YSA_REPORT,"YSA",
+            PNL_REPORT,"PL"
+    );
+    private static final Map<String,String> TB_ASCII_SUFFIX_MAP = Map.of(
+            NWSA_REPORT,"TBNWSA",
+            YSA_REPORT,"TBY",
+            PNL_REPORT,"TBP"
+    );
+    private static final Map<Character,String> REPORT_SECONDARY_BASE_PATH_MAP = Map.of(
+            Constants.ASCII,"ascii_files",
+            Constants.TB_ASCII,"tb_ascii_files",
+            Constants.TB_ASCII_REPORT,"tb_ascii_report_files"
+    );
+
+    public ReportPathBuilderService(ReportTypeRepository reportTypeRepository) {
+        this.reportTypeRepository = reportTypeRepository;
+    }
+
+//    public  void testReportPath()
+//    {
+//        List<ReportType> reportTypeList = reportTypeRepository.findAllByOrderByReportNameAsc();
+//        LocalDate customDate = LocalDate.of(2026, 3, 30);
+//        String tempBranch="00001";
+//        for(ReportType reportType: reportTypeList)
+//        {
+//            buildReportPath(reportType,customDate, null);
+//            buildReportPath(reportType,customDate,tempBranch);
+//
+//        }
+//    }
+
+
+    public ReportPath buildReportPath(ReportType reportType, LocalDate reportDate , String branchCode) {
+        char type = reportType.getType();
+        if (type == Constants.STANDARD) {
+            return buildStandardReportPath(reportType, reportDate, branchCode);
+
+        } else if (type == Constants.TB_ASCII_REPORT ||
+                type == Constants.ASCII ||
+                type == Constants.TB_ASCII) {
+            return buildNonStandardReportPath(reportType, reportDate, branchCode,type);
+        } else
+        {
+            throw new IllegalArgumentException("Invalid Report Type");
+        }
+
+    }
+
+    private ReportPath buildStandardReportPath(ReportType reportType,
+                                               LocalDate reportDate,
+                                               String branchCode) {
+        String folderDate = reportDate.format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String fileDate = reportDate.format(DateTimeFormatter.ofPattern("ddMMyyyy"));
+        Path searchDirectory;
+        String searchPattern;
+        if (branchCode == null || branchCode.isBlank()) {
+            searchDirectory = new Path(new Path(reportsBasePath, folderDate),
+                    reportType.getFileName());
+            searchPattern = String.format("%s_%s",
+                    reportType.getFileName(),
+                    fileDate);
+        } else {
+            searchDirectory = new Path(
+                    new Path(
+                            new Path(reportsBasePath, folderDate),
+                            reportType.getFileName()),
+                    branchCode);
+            searchPattern = String.format("%s_%s_%s",
+                    reportType.getFileName(),
+                    fileDate,
+                    branchCode);
+        }
+        log.info("Standard Report Search Directory : {}", searchDirectory);
+        log.info("Standard Report Search Pattern   : {}", searchPattern);
+        return new ReportPath(searchDirectory, searchPattern);
+    }
+
+
+    private  ReportPath buildNonStandardReportPath(ReportType reportType,LocalDate reportDate,String branchCode,char type) {
+
+        String folderDate = reportDate.format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String fileDate = reportDate.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String secondaryReportBasePath = REPORT_SECONDARY_BASE_PATH_MAP.get(type);
+        String reportBranch = (branchCode == null || branchCode.isBlank()) ? WHOLE_BANK_BRANCH_CODE : branchCode;
+        if (secondaryReportBasePath == null) throw new IllegalArgumentException("Invalid Report Type");
+        String reportFolder = getReportFolder(reportType.getFileName());
+        Path searchDirectory = new Path( new Path( new Path( reportsBasePath,folderDate),secondaryReportBasePath),reportFolder);
+        String suffix = getSearchPatternSuffix(reportFolder,type);
+        String searchPattern = reportBranch+"."+suffix + "."+fileDate;
+        log.info("Report Folder :{} - Report Type : {} - Suffix :{} - Report Branch :{}",reportFolder,reportType,suffix,reportBranch);
+        log.info("Search Directory :{}",searchDirectory);
+        log.info("Search Pattern :{}",searchPattern);
+        return new ReportPath(searchDirectory,searchPattern);
+
+
+
+
+
+    }
+    
+    private String getSearchPatternSuffix(String reportFolder,char type)
+    {
+        String suffix;
+        if(type == Constants.TB_ASCII || type == Constants.TB_ASCII_REPORT)
+        {
+            suffix = TB_ASCII_SUFFIX_MAP.get(reportFolder);
+        } else if (type == Constants.ASCII) {
+            suffix = ASCII_SUFFIX_MAP.get(reportFolder);
+        }
+        else {
+            throw new IllegalArgumentException("Invalid Report ");
+        }
+        if (suffix == null)  throw  new IllegalArgumentException("Invalid Report ");
+        return suffix;
+    }
+
+
+
+    private String getReportFolder(String fileName)
+    {
+        if (fileName == null) throw new ResourceNotFoundException("Invalid Report Type");
+
+        if(fileName.contains(NWSA)) return NWSA_REPORT;
+        else if (fileName.contains(YSA)) return YSA_REPORT;
+        else if (fileName.contains(PNL)) return PNL_REPORT;
+        else {
+            throw new ResourceNotFoundException("Invalid Report Type");
+        }
+    }
+
+}
